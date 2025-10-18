@@ -1,0 +1,218 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/**
+ * Users
+ */
+model User {
+  id                   String               @id @default(cuid())
+  email                String?              @unique
+  clerkId              String?              @unique
+  username             String?              @unique
+  stripeCustomerId     String?
+  // organizationsOwned   Organization[]       @relation("OrgOwner")
+  // memberships          OrganizationMember[] 
+
+  notifications           Notification[]       @relation("NotificationReceiver")
+  sentNotifications       Notification[]       @relation("NotificationSender")
+  // organizationMemberships OrganizationMember[]
+
+  payments           Payment[]           @relation("UserPayments")
+  sessions           Session[]           @relation("UserSessions")
+  creditTransactions CreditTransaction[] // opposite of CreditTransaction.user
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/**
+ * Organizations and membership join table
+ */
+// model Organization {
+//   id          String               @id @default(cuid())
+//   name        String
+//   ownerId     String
+//   credits     Int                  @default(0)
+//   memberships OrganizationMember[]
+
+//   conversations Conversation[]
+//   payments      Payment[]      @relation("OrgPayments")
+
+//   subscriptions      Subscription[]
+//   creditTransactions CreditTransaction[] @relation("OrgCreditTransactions")
+
+//   createdAt DateTime  @default(now())
+//   updatedAt DateTime  @updatedAt
+//   Session   Session[]
+// }
+
+// model OrganizationMember {
+//   id             String   @id @default(cuid())
+//   organizationId String
+//   userId         String
+//   role           String   @default("member") // "admin" | "member"
+//   joinedAt       DateTime @default(now())
+
+//   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+//   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+//   @@unique([organizationId, userId])
+//   @@map("organization_members")
+// }
+
+model CreditTransaction {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  amount         Int
+  type           String // "purchase" | "usage"
+  createdAt      DateTime @default(now())
+
+  // organization Organization @relation("OrgCreditTransactions", fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("credit_transactions")
+}
+
+/**
+ * Conversations and Messages
+ */
+model Conversation {
+  id        String       @id @default(cuid())
+  title     String?
+  orgId     String
+  // org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  messages  Message[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String
+  content        String
+  tokens         Int?
+  createdAt      DateTime     @default(now())
+}
+
+/**
+ * Notifications
+ */
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  senderId  String?
+  type      String
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user   User  @relation("NotificationReceiver", fields: [userId], references: [id], onDelete: Cascade)
+  sender User? @relation("NotificationSender", fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@map("notifications")
+}
+
+/**
+ * Credit packages, payments and transactions
+ */
+model CreditPackage {
+  id            String    @id @default(cuid())
+  name          String
+  credits       Int
+  price         Int // cents
+  stripePriceId String?   @unique
+  popular       Boolean   @default(false)
+  payments      Payment[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("credit_packages")
+}
+
+model Payment {
+  id              String   @id @default(cuid())
+  userId          String
+  organizationId  String
+  packageId       String
+  stripeSessionId String?  @unique
+  stripePaymentId String?  @unique
+  amount          Int // cents
+  credits         Int
+  status          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  package      CreditPackage @relation(fields: [packageId], references: [id])
+  user         User          @relation("UserPayments", fields: [userId], references: [id], onDelete: Cascade)
+  // organization Organization  @relation("OrgPayments", fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+/**
+ * Subscriptions
+ */
+model SubscriptionPlan {
+  id              String         @id @default(cuid())
+  name            String
+  description     String?
+  monthlyCredits  Int
+  price           Int // cents per month
+
+  stripePriceId   String?        @unique
+  stripeProductId String?        @unique
+
+  features        String[]
+  popular         Boolean        @default(false)
+  subscriptions   Subscription[]
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@map("subscription_plans")
+}
+
+model Subscription {
+  id                   String   @id @default(cuid())
+  organizationId       String   @unique
+  planId               String
+  stripeSubscriptionId String   @unique
+  stripeCustomerId     String
+
+  status               String
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean  @default(false)
+  
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  // organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan         SubscriptionPlan @relation(fields: [planId], references: [id])
+
+  @@map("subscriptions")
+}
+
+/**
+ * Sessions
+ */
+model Session {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  token          String   @unique
+  createdAt      DateTime @default(now())
+
+  user         User         @relation("UserSessions", fields: [userId], references: [id], onDelete: Cascade)
+  // organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
